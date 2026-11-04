@@ -1,29 +1,54 @@
 # ArpGuard
 
-A small Windows command-line tool that inspects your ARP table, looks for signs of ARP
-spoofing, pins static ARP entries (usually your router), and watches for suspicious changes.
+A small Windows tool that inspects your ARP table, looks for signs of ARP spoofing, pins
+static ARP entries (usually your router), and watches for suspicious changes. It comes as
+both a window (`ArpGuardGui.exe`) and a command-line tool (`arpguard.exe`).
 
-## Build & run
+## Project layout
+
+| Folder | What's in it |
+|---|---|
+| `src/ArpGuard.Core` | Shared logic: reading the ARP table, spoofing checks, pinning, watching |
+| `src/ArpGuard.Cli`  | The `arpguard` command-line tool |
+| `src/ArpGuard.Gui`  | The `ArpGuardGui` window (Windows Forms) |
+
+## Build
 
 Requires the .NET 10 SDK.
 
 ```powershell
 dotnet build
-dotnet run -- list
-dotnet run -- check --online
-# pin/unpin need an elevated (Administrator) terminal:
-dotnet run -- pin
-dotnet run -- unpin
-dotnet run -- watch --log arp-alerts.log
 ```
 
-To produce a single `arpguard.exe`:
+To produce standalone `.exe` files in `publish\`:
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
+dotnet publish src/ArpGuard.Gui -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
+dotnet publish src/ArpGuard.Cli -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
-## Commands
+## The window
+
+Run `src\ArpGuard.Gui\bin\Debug\net10.0-windows\ArpGuardGui.exe` (or the published one).
+It asks for administrator rights on start, because pinning changes the system ARP table.
+
+- The coloured bar shows whether your router is pinned, or turns red on signs of spoofing.
+- **Pin gateway / Unpin gateway** pins your router's current MAC after a safety check,
+  or removes the pin.
+- **Check now** re-scans and writes the results to the log.
+- **Start watching** checks every 2 seconds. You can minimize the window: suspicious
+  changes play a sound and show a Windows notification.
+
+## The command-line tool
+
+```powershell
+dotnet run --project src/ArpGuard.Cli -- list
+dotnet run --project src/ArpGuard.Cli -- check --online
+# pin/unpin need an elevated (Administrator) terminal:
+dotnet run --project src/ArpGuard.Cli -- pin
+dotnet run --project src/ArpGuard.Cli -- unpin
+dotnet run --project src/ArpGuard.Cli -- watch --log arp-alerts.log
+```
 
 | Command | What it does |
 |---|---|

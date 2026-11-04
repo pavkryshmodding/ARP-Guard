@@ -13,7 +13,7 @@ internal static class Admin
     public static void Require(string command)
     {
         if (!IsElevated())
-            throw new CliException(
+            throw new ArpGuardException(
                 $"'{command}' changes the system ARP table and needs administrator rights. " +
                 "Re-run it from an elevated terminal (right-click Terminal -> Run as administrator).");
     }

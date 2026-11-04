@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ArpGuard.Cli/ArpGuard.Cli.csproj" />
+    <Project Path="src/ArpGuard.Core/ArpGuard.Core.csproj" />
+    <Project Path="src/ArpGuard.Gui/ArpGuard.Gui.csproj" />
+  </Folder>
+</Solution>

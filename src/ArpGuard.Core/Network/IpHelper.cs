@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace ArpGuard;
 
 /// <summary>Mirrors Windows' NL_NEIGHBOR_STATE.</summary>
-internal enum NeighborState
+public enum NeighborState
 {
     Unreachable = 0,
     Incomplete = 1,
@@ -16,7 +16,7 @@ internal enum NeighborState
     Permanent = 6,
 }
 
-internal sealed record ArpEntry(IPAddress Ip, string Mac, int InterfaceIndex, NeighborState State)
+public sealed record ArpEntry(IPAddress Ip, string Mac, int InterfaceIndex, NeighborState State)
 {
     public bool HasMac => Mac.Length > 0 && !MacUtil.IsZero(Mac);
     public bool IsStatic => State == NeighborState.Permanent;
@@ -26,7 +26,7 @@ internal sealed record ArpEntry(IPAddress Ip, string Mac, int InterfaceIndex, Ne
 }
 
 /// <summary>Reads the IPv4 neighbor (ARP) table through the IP Helper API.</summary>
-internal static class IpHelper
+public static class IpHelper
 {
     private const ushort AF_INET = 2;
 
@@ -52,7 +52,7 @@ internal static class IpHelper
     {
         int error = GetIpNetTable2(AF_INET, out IntPtr table);
         if (error != 0)
-            throw new CliException($"Couldn't read the ARP table: {new Win32Exception(error).Message}");
+            throw new ArpGuardException($"Couldn't read the ARP table: {new Win32Exception(error).Message}");
 
         try
         {

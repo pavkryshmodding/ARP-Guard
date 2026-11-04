@@ -6,7 +6,7 @@ namespace ArpGuard;
 /// Looks up who manufactured a network card from the first 3 bytes of its MAC (the OUI).
 /// Only the OUI is sent, never the full MAC.
 /// </summary>
-internal static class VendorLookup
+public static class VendorLookup
 {
     private static readonly HttpClient Http = CreateClient();
 

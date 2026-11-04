@@ -10,4 +10,8 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ArpGuard.Core\ArpGuard.Core.csproj" />
+  </ItemGroup>
+
 </Project>

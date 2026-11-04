@@ -1,16 +1,16 @@
 namespace ArpGuard;
 
-internal enum Severity { Info, Warning, Danger }
+public enum Severity { Info, Warning, Danger }
 
-internal sealed record Finding(Severity Severity, string Message);
+public sealed record Finding(Severity Severity, string Message);
 
-internal sealed record DuplicateGroup(int InterfaceIndex, string Mac, IReadOnlyList<ArpEntry> Entries)
+public sealed record DuplicateGroup(int InterfaceIndex, string Mac, IReadOnlyList<ArpEntry> Entries)
 {
     /// <summary>Stable identity so 'watch' reports each group only once.</summary>
     public string Key => $"{InterfaceIndex}|{Mac}|{string.Join(",", Entries.Select(e => e.Ip))}";
 }
 
-internal static class SpoofDetector
+public static class SpoofDetector
 {
     public static List<Finding> Analyze(Snapshot s, PinStore pins)
     {

@@ -4,7 +4,7 @@ using System.Net.Sockets;
 
 namespace ArpGuard;
 
-internal sealed record NetInterface(
+public sealed record NetInterface(
     int Index, string Name, IPAddress? Address, IPAddress? Mask, IReadOnlyList<IPAddress> Gateways)
 {
     public bool Contains(IPAddress ip) =>
@@ -19,7 +19,7 @@ internal sealed record NetInterface(
 }
 
 /// <summary>The ARP table plus the active network interfaces, captured at one moment.</summary>
-internal sealed class Snapshot
+public sealed class Snapshot
 {
     private Snapshot(IReadOnlyList<ArpEntry> entries, IReadOnlyList<NetInterface> interfaces)
     {

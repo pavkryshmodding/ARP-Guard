@@ -3,14 +3,14 @@ using System.Text.Json;
 
 namespace ArpGuard;
 
-internal sealed record PinRecord(string Ip, string Mac, int InterfaceIndex, string InterfaceName, DateTimeOffset PinnedAt);
+public sealed record PinRecord(string Ip, string Mac, int InterfaceIndex, string InterfaceName, DateTimeOffset PinnedAt);
 
 /// <summary>
 /// Remembers which entries ArpGuard pinned, so 'unpin --all' only touches ours and
 /// 'check'/'watch' can tell when a gateway no longer matches its pin.
 /// Stored in %ProgramData%\ArpGuard\pins.json.
 /// </summary>
-internal sealed class PinStore
+public sealed class PinStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -21,7 +21,8 @@ internal sealed class PinStore
 
     public List<PinRecord> Pins { get; }
 
-    public static PinStore Load()
+    /// <param name="onWarning">Told about a damaged/unreadable pins file (loading continues without it).</param>
+    public static PinStore Load(Action<string>? onWarning = null)
     {
         try
         {
@@ -32,7 +33,7 @@ internal sealed class PinStore
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
-            Ui.Warn($"Couldn't read {FilePath} ({ex.Message}); continuing without saved pins.");
+            onWarning?.Invoke($"Couldn't read {FilePath} ({ex.Message}); continuing without saved pins.");
             return new PinStore([]);
         }
     }

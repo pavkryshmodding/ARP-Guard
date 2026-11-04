@@ -8,9 +8,7 @@ internal static class ListCommand
         bool all = cli.Flag("all");
 
         var s = Snapshot.Take(probeGateways: true);
-        var duplicateMacs = SpoofDetector.FindDuplicates(s)
-            .Select(g => (g.InterfaceIndex, g.Mac))
-            .ToHashSet();
+        var duplicateMacs = EntryText.DuplicateMacs(s);
 
         var groups = s.Entries
             .Where(e => all || (e.IsUsable && s.InterfaceFor(e.InterfaceIndex) is not null))
@@ -31,7 +29,7 @@ internal static class ListCommand
 
             var rows = group
                 .OrderBy(e => IpUtil.ToUInt32(e.Ip))
-                .Select(e => new[] { e.Ip.ToString(), e.HasMac ? e.Mac : "-", StateText(e), Notes(e, s, duplicateMacs) })
+                .Select(e => new[] { e.Ip.ToString(), e.HasMac ? e.Mac : "-", EntryText.State(e), EntryText.Notes(e, s, duplicateMacs) })
                 .ToList();
             Ui.Table(["IP", "MAC", "TYPE", "NOTES"], rows);
             Console.WriteLine();
@@ -40,22 +38,5 @@ internal static class ListCommand
         if (!all)
             Ui.Line(ConsoleColor.DarkGray, "Hiding multicast, broadcast, unresolved and inactive-interface entries. Use --all to show them.");
         return 0;
-    }
-
-    private static string StateText(ArpEntry e) => e.State switch
-    {
-        NeighborState.Permanent => "static",
-        NeighborState.Reachable => "dynamic",
-        NeighborState.Stale => "dynamic (stale)",
-        _ => e.State.ToString().ToLowerInvariant(),
-    };
-
-    private static string Notes(ArpEntry e, Snapshot s, HashSet<(int, string)> duplicateMacs)
-    {
-        var notes = new List<string>();
-        if (s.IsGateway(e)) notes.Add("GATEWAY");
-        if (duplicateMacs.Contains((e.InterfaceIndex, e.Mac))) notes.Add("DUPLICATE MAC");
-        if (e.IsUsable && MacUtil.IsLocallyAdministered(e.Mac)) notes.Add("random/local MAC");
-        return string.Join(", ", notes);
     }
 }

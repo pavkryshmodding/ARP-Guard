@@ -11,10 +11,10 @@ try
         "unpin" => UnpinCommand.Run(cli),
         "watch" => WatchCommand.Run(cli),
         "help" or "-h" or "--help" or "/?" => Help.Print(),
-        _ => throw new CliException($"Unknown command '{cli.Command}'. Run 'arpguard help' for usage."),
+        _ => throw new ArpGuardException($"Unknown command '{cli.Command}'. Run 'arpguard help' for usage."),
     };
 }
-catch (CliException ex)
+catch (ArpGuardException ex)
 {
     Ui.Error(ex.Message);
     return 1;

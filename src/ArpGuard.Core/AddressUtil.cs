@@ -3,7 +3,7 @@ using System.Numerics;
 
 namespace ArpGuard;
 
-internal static class MacUtil
+public static class MacUtil
 {
     /// <summary>Formats as "aa-bb-cc-dd-ee-ff" (the format netsh expects). Empty for no address.</summary>
     public static string Format(byte[] bytes) =>
@@ -34,7 +34,7 @@ internal static class MacUtil
     }
 }
 
-internal static class IpUtil
+public static class IpUtil
 {
     public static uint ToUInt32(IPAddress ip)
     {

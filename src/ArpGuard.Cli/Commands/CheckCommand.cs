@@ -11,7 +11,7 @@ internal static class CheckCommand
         if (!s.Interfaces.Any(i => i.Gateways.Count > 0))
             Ui.Warn("No active interface has a default gateway. Are you connected to a network?");
 
-        var findings = SpoofDetector.Analyze(s, PinStore.Load())
+        var findings = SpoofDetector.Analyze(s, PinStore.Load(Ui.Warn))
             .OrderBy(f => f.Severity)
             .ToList();
         foreach (var finding in findings)

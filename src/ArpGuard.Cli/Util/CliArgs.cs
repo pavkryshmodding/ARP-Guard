@@ -3,9 +3,6 @@ using System.Net.Sockets;
 
 namespace ArpGuard;
 
-/// <summary>An error that should be shown to the user as a plain message (no stack trace).</summary>
-internal sealed class CliException(string message) : Exception(message);
-
 /// <summary>Minimal parser for "command --flag --option value --option=value".</summary>
 internal sealed class CliArgs
 {
@@ -29,7 +26,7 @@ internal sealed class CliArgs
         {
             string token = argv[i];
             if (!token.StartsWith("--") || token.Length == 2)
-                throw new CliException($"Unexpected argument '{token}'. Options look like --name or --name value.");
+                throw new ArpGuardException($"Unexpected argument '{token}'. Options look like --name or --name value.");
 
             string name = token[2..];
             string? value = null;
@@ -54,7 +51,7 @@ internal sealed class CliArgs
         foreach (string key in _options.Keys)
         {
             if (!names.Contains(key, StringComparer.OrdinalIgnoreCase))
-                throw new CliException($"'{Command}' doesn't take --{key}. Run 'arpguard help' for usage.");
+                throw new ArpGuardException($"'{Command}' doesn't take --{key}. Run 'arpguard help' for usage.");
         }
     }
 
@@ -63,7 +60,7 @@ internal sealed class CliArgs
         if (!_options.TryGetValue(name, out string? value))
             return false;
         if (value is not null)
-            throw new CliException($"--{name} is a flag and doesn't take a value (got '{value}').");
+            throw new ArpGuardException($"--{name} is a flag and doesn't take a value (got '{value}').");
         return true;
     }
 
@@ -71,7 +68,7 @@ internal sealed class CliArgs
     {
         if (!_options.TryGetValue(name, out string? value))
             return null;
-        return value ?? throw new CliException($"--{name} needs a value.");
+        return value ?? throw new ArpGuardException($"--{name} needs a value.");
     }
 
     public int GetInt(string name, int fallback, int min, int max)
@@ -80,7 +77,7 @@ internal sealed class CliArgs
         if (text is null)
             return fallback;
         if (!int.TryParse(text, out int n) || n < min || n > max)
-            throw new CliException($"--{name} must be a whole number between {min} and {max}.");
+            throw new ArpGuardException($"--{name} must be a whole number between {min} and {max}.");
         return n;
     }
 
@@ -90,7 +87,7 @@ internal sealed class CliArgs
         if (text is null)
             return null;
         if (!int.TryParse(text, out int n) || n <= 0)
-            throw new CliException("--interface must be an interface number as shown by 'arpguard list' (e.g. 12).");
+            throw new ArpGuardException("--interface must be an interface number as shown by 'arpguard list' (e.g. 12).");
         return n;
     }
 
@@ -100,7 +97,7 @@ internal sealed class CliArgs
         if (text is null)
             return null;
         if (!IPAddress.TryParse(text, out var ip) || ip.AddressFamily != AddressFamily.InterNetwork || text.Count(c => c == '.') != 3)
-            throw new CliException($"--{name}: '{text}' isn't a valid IPv4 address.");
+            throw new ArpGuardException($"--{name}: '{text}' isn't a valid IPv4 address.");
         return ip;
     }
 }

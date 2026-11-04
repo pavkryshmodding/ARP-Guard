@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ArpGuardGui</AssemblyName>
+    <RootNamespace>ArpGuard</RootNamespace>
+    <!-- Pinning changes the system ARP table, so the window always runs as administrator. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArpGuard.Core\ArpGuard.Core.csproj" />
+  </ItemGroup>
+
+</Project>

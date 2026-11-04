@@ -56,3 +56,7 @@ Run `arpguard help` for every option.
   (printed on its label or shown in its admin page) when in doubt.
 - If you replace your router, run `arpguard unpin` or you'll lose your connection.
 - Pinned entries are recorded in `%ProgramData%\ArpGuard\pins.json`.
+
+## License
+
+[MIT](LICENSE)

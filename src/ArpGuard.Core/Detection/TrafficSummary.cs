@@ -11,6 +11,8 @@ public sealed class TrafficSummary(NetInterface iface, IReadOnlyDictionary<IPAdd
     private readonly Dictionary<IPAddress, Dictionary<string, int>> _gatewayClaims = new();
     private readonly Dictionary<string, int> _selfClaims = new();
     private readonly Dictionary<string, int> _internetSenders = new();
+    private readonly Dictionary<ushort, int> _etherTypes = new();
+    private readonly Dictionary<(string Mac, IPAddress Ip), (int Requests, int Replies)> _arpSenders = new();
 
     public int Frames { get; private set; }
     public int ArpFrames { get; private set; }
@@ -19,6 +21,7 @@ public sealed class TrafficSummary(NetInterface iface, IReadOnlyDictionary<IPAdd
     public void Add(ParsedFrame frame)
     {
         Frames++;
+        _etherTypes[frame.EtherType] = _etherTypes.GetValueOrDefault(frame.EtherType) + 1;
         if (frame.Kind == FrameKind.Arp)
         {
             var ip = frame.ArpSenderIp!;
@@ -26,6 +29,8 @@ public sealed class TrafficSummary(NetInterface iface, IReadOnlyDictionary<IPAdd
             if (!iface.Contains(ip) || !PacketInspector.IsHostMac(mac))
                 return; // another network's ARP, or a probe
             ArpFrames++;
+            var (req, rep) = _arpSenders.GetValueOrDefault((mac, ip));
+            _arpSenders[(mac, ip)] = frame.ArpOp == 2 ? (req, rep + 1) : (req + 1, rep);
             if (gateways.ContainsKey(ip))
                 Bump(_gatewayClaims.TryGetValue(ip, out var d) ? d : _gatewayClaims[ip] = new(), mac);
             else if (ip.Equals(iface.Address))
@@ -43,6 +48,8 @@ public sealed class TrafficSummary(NetInterface iface, IReadOnlyDictionary<IPAdd
         var lines = new List<string>
         {
             $"{Frames} packets inspected: {ArpFrames} ARP on this network, {InternetFrames} from the internet addressed to you.",
+            "Frame types: " + string.Join(", ", _etherTypes.OrderByDescending(kv => kv.Value)
+                .Select(kv => $"{EtherTypeName(kv.Key)} {kv.Value}")),
         };
 
         foreach (var (gw, expected) in gateways)
@@ -66,6 +73,17 @@ public sealed class TrafficSummary(NetInterface iface, IReadOnlyDictionary<IPAdd
         }
 
         var routerMacs = gateways.Values.OfType<ExpectedMac>().Select(g => g.Mac).ToHashSet();
+        if (_arpSenders.Count > 0)
+        {
+            lines.Add($"Busiest ARP senders on this network ({_arpSenders.Count} in total):");
+            foreach (var ((mac, ip), (req, rep)) in _arpSenders.OrderByDescending(kv => kv.Value.Requests + kv.Value.Replies).Take(8))
+            {
+                string who = mac == iface.Mac ? "  this computer" :
+                    routerMacs.Any(r => MacUtil.IsSibling(r, mac)) ? "  your router" : "";
+                lines.Add($"  {mac}  {ip,-15} {req,6} requests {rep,6} replies{who}");
+            }
+        }
+
         lines.Add("Internet traffic to you arrived from:");
         if (_internetSenders.Count == 0)
             lines.Add("  nothing captured.");
@@ -73,6 +91,16 @@ public sealed class TrafficSummary(NetInterface iface, IReadOnlyDictionary<IPAdd
             lines.AddRange(Rows(_internetSenders, mac => RouterNote(mac, routerMacs, "NOT your router: something is relaying")));
         return lines;
     }
+
+    private static string EtherTypeName(ushort type) => type switch
+    {
+        0x0800 => "IPv4",
+        0x0806 => "ARP",
+        0x86DD => "IPv6",
+        0x888E => "EAPOL",
+        0x88CC => "LLDP",
+        _ => $"0x{type:x4}",
+    };
 
     private static string RouterNote(string mac, IEnumerable<string> routerMacs, string otherwise) =>
         routerMacs.Contains(mac) ? "  your router" :

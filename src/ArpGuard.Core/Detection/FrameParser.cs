@@ -13,7 +13,8 @@ public sealed record ParsedFrame(
     ushort ArpOp = 0,
     string? ArpSenderMac = null,
     IPAddress? ArpSenderIp = null,
-    IPAddress? IpSource = null)
+    IPAddress? IpSource = null,
+    ushort EtherType = 0)
 {
     public string ArpKind => ArpOp switch { 1 => "an ARP request", 2 => "an ARP reply", _ => "an ARP packet" };
 }
@@ -45,15 +46,15 @@ public static class FrameParser
             BinaryPrimitives.ReadUInt16BigEndian(payload[2..]) == EtherTypeIPv4 &&
             payload[4] == 6 && payload[5] == 4)
         {
-            return new(FrameKind.Arp, dst, src,
+            return new(FrameKind.Arp, dst, src, EtherType: etherType,
                 ArpOp: BinaryPrimitives.ReadUInt16BigEndian(payload[6..]),
                 ArpSenderMac: MacUtil.Format(payload[8..14].ToArray()),
                 ArpSenderIp: new IPAddress(payload[14..18]));
         }
 
         if (etherType == EtherTypeIPv4 && payload.Length >= 20 && payload[0] >> 4 == 4)
-            return new(FrameKind.IPv4, dst, src, IpSource: new IPAddress(payload[12..16]));
+            return new(FrameKind.IPv4, dst, src, IpSource: new IPAddress(payload[12..16]), EtherType: etherType);
 
-        return new(FrameKind.Other, dst, src);
+        return new(FrameKind.Other, dst, src, EtherType: etherType);
     }
 }

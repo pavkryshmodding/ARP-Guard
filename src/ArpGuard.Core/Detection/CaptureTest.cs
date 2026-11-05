@@ -3,7 +3,9 @@ using System.Net.NetworkInformation;
 
 namespace ArpGuard;
 
-public sealed record CaptureTestResult(IReadOnlyList<Finding> Findings, IReadOnlyList<string> Report)
+/// <param name="CaptureFiles">Raw captures that were kept (see the saveAs parameter).</param>
+public sealed record CaptureTestResult(
+    IReadOnlyList<Finding> Findings, IReadOnlyList<string> Report, IReadOnlyList<string> CaptureFiles)
 {
     public bool Danger => Findings.Any(f => f.Severity == Severity.Danger);
 }
@@ -17,29 +19,48 @@ public static class CaptureTest
 {
     private static readonly IPAddress PingTarget = IPAddress.Parse("1.1.1.1");
 
-    public static CaptureTestResult RunNpcap(Snapshot s, PinStore pins, TimeSpan duration, CancellationToken ct)
+    /// <param name="saveAs">If set, keep the raw capture as "{saveAs}_if{interface}.pcap".</param>
+    public static CaptureTestResult RunNpcap(
+        Snapshot s, PinStore pins, TimeSpan duration, CancellationToken ct, string? saveAs = null)
     {
         string version = PcapCapture.Version() ?? throw new ArpGuardException(
             $"Npcap isn't installed. Get it from {WireMonitor.NpcapUrl}, or use the pktmon test instead.");
 
         var report = new List<string> { $"Using {version}." };
         var findings = new List<Finding>();
+        var files = new List<string>();
         var sessions = new List<(NetInterface Iface, PcapCapture Capture, Session Session)>();
         try
         {
             foreach (var iface in GatewayInterfaces(s))
             {
+                PcapCapture capture;
                 try
                 {
-                    sessions.Add((iface, PcapCapture.Open(iface.Id, PacketInspector.CaptureFilter(iface)), new Session(s, iface, pins)));
+                    capture = PcapCapture.Open(iface.Id, PacketInspector.CaptureFilter(iface));
                 }
                 catch (ArpGuardException ex)
                 {
                     findings.Add(new(Severity.Warning, $"Can't capture on {iface.Name}: {ex.Message}"));
+                    continue;
+                }
+                sessions.Add((iface, capture, new Session(s, iface, pins)));
+
+                if (saveAs is null)
+                    continue;
+                string file = $"{saveAs}_if{iface.Index}.pcap";
+                try
+                {
+                    capture.SaveTo(file);
+                    files.Add(file);
+                }
+                catch (ArpGuardException ex)
+                {
+                    findings.Add(new(Severity.Warning, $"Testing anyway, but couldn't save the capture: {ex.Message}"));
                 }
             }
             if (sessions.Count == 0)
-                return new(findings, report);
+                return new(findings, report, files);
 
             var deadline = DateTime.UtcNow + duration;
             string? error = null;
@@ -69,7 +90,7 @@ public static class CaptureTest
 
             foreach (var x in sessions)
                 x.Session.AppendTo(report, findings);
-            return new(findings, report);
+            return new(findings, report, files);
         }
         finally
         {
@@ -78,7 +99,9 @@ public static class CaptureTest
     }
 
     /// <summary>Needs administrator rights. Refuses to run if pktmon is already capturing for someone else.</summary>
-    public static CaptureTestResult RunPktmon(Snapshot s, PinStore pins, TimeSpan duration, CancellationToken ct)
+    /// <param name="saveAs">If set, keep the raw capture as "{saveAs}.pcapng".</param>
+    public static CaptureTestResult RunPktmon(
+        Snapshot s, PinStore pins, TimeSpan duration, CancellationToken ct, string? saveAs = null)
     {
         var interfaces = GatewayInterfaces(s).ToList();
         string baseName = Path.Combine(Path.GetTempPath(), $"arpguard-pktmon-{Guid.NewGuid():N}");
@@ -124,12 +147,26 @@ public static class CaptureTest
                         session.Add(frame);
                 session.AppendTo(report, findings);
             }
-            return new(findings, report);
+
+            var files = new List<string>();
+            if (saveAs is not null)
+            {
+                try
+                {
+                    File.Move(pcap, saveAs + ".pcapng");
+                    files.Add(saveAs + ".pcapng");
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    findings.Add(new(Severity.Warning, $"Couldn't save the capture: {ex.Message}"));
+                }
+            }
+            return new(findings, report, files);
         }
         finally
         {
             TryDelete(etl);
-            TryDelete(pcap);
+            TryDelete(pcap); // no-op once moved
         }
     }
 

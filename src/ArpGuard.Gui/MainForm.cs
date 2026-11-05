@@ -357,13 +357,23 @@ internal sealed class MainForm : Form
         }
 
         var test = new ToolStripMenuItem("&Test") { ShowShortcutKeys = false };
-        test.DropDownItems.AddRange([_testNpcap, _testPktmon, new ToolStripSeparator(), length]);
+        var openFolder = new ToolStripMenuItem("&Open test results folder")
+        {
+            ToolTipText = $"Every test is saved here as a report (.txt) plus its raw capture. Newest {TestLog.KeepRuns} are kept.",
+        };
+        openFolder.Click += (_, _) =>
+        {
+            Directory.CreateDirectory(TestLog.Folder);
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{TestLog.Folder}\"");
+        };
+
+        test.DropDownItems.AddRange([_testNpcap, _testPktmon, new ToolStripSeparator(), length, openFolder]);
         _menu.ShowItemToolTips = true;
         _menu.Items.Add(test);
     }
 
     private async Task RunTestAsync(
-        string name, Func<Snapshot, PinStore, TimeSpan, CancellationToken, CaptureTestResult> test)
+        string name, Func<Snapshot, PinStore, TimeSpan, CancellationToken, string?, CaptureTestResult> test)
     {
         if (_testCts is not null)
             return;
@@ -375,16 +385,28 @@ internal sealed class MainForm : Form
         SetStatus($"{name} test running ({seconds} s)...", Color.SteelBlue);
         Write($"{DateTime.Now:HH:mm:ss} {name} test: capturing for {seconds} s while pinging 1.1.1.1 once a second...");
 
+        var started = DateTime.Now;
+        var duration = TimeSpan.FromSeconds(seconds);
+        var store = LoadPins();
+        Snapshot? snapshot = null;
+        string? run = null;
+        CaptureTestResult? result = null;
+        string outcome = "error";
+        string? error = null;
         try
         {
-            var store = LoadPins();
-            var result = await Task.Run(() =>
-                test(Snapshot.Take(probeGateways: true), store, TimeSpan.FromSeconds(seconds), cts.Token));
+            result = await Task.Run(() =>
+            {
+                run = TestLog.NewRun(name, started);
+                snapshot = Snapshot.Take(probeGateways: true);
+                return test(snapshot, store, duration, cts.Token, run);
+            });
 
             foreach (string line in result.Report)
                 Write("  " + line);
             foreach (var f in result.Findings)
                 Write(Format(f));
+            outcome = result.Danger ? "danger" : "ok";
             if (result.Danger)
             {
                 Write("=> The captured traffic shows signs of ARP spoofing. See above.");
@@ -399,11 +421,13 @@ internal sealed class MainForm : Form
         }
         catch (OperationCanceledException)
         {
+            outcome = "cancelled";
             Write("Test cancelled.");
             SetStatus(oldText, oldColor);
         }
         catch (ArpGuardException ex)
         {
+            error = ex.Message;
             Write("ERROR  " + ex.Message);
             SetStatus(oldText, oldColor);
             if (!_closeAfterTest)
@@ -411,8 +435,20 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            error = ex.ToString();
             Write("ERROR  " + ex);
             SetStatus(oldText, oldColor);
+        }
+
+        try
+        {
+            if (run is not null)
+                Write("Saved to " + await Task.Run(() =>
+                    TestLog.Write(run, name, started, duration, snapshot, store, result, outcome, error)));
+        }
+        catch (Exception ex)
+        {
+            Write("WARN   Couldn't save the test results: " + ex.Message);
         }
         finally
         {

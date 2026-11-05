@@ -25,6 +25,7 @@ public sealed class PcapCapture : IDisposable
     });
 
     private IntPtr _handle;
+    private IntPtr _dumper;
 
     private PcapCapture(IntPtr handle) => _handle = handle;
 
@@ -67,6 +68,16 @@ public sealed class PcapCapture : IDisposable
         return capture;
     }
 
+    /// <summary>Also writes every captured packet to a .pcap file (readable by Wireshark).</summary>
+    public void SaveTo(string path)
+    {
+        if (_dumper != IntPtr.Zero)
+            throw new InvalidOperationException("Already saving this capture.");
+        _dumper = pcap_dump_open(_handle, path);
+        if (_dumper == IntPtr.Zero)
+            throw new ArpGuardException($"Npcap couldn't create {path}: {LastError()}");
+    }
+
     /// <summary>
     /// Waits up to half a second for a packet and copies its captured bytes into <paramref name="buffer"/>.
     /// </summary>
@@ -84,6 +95,8 @@ public sealed class PcapCapture : IDisposable
         }
 
         // struct pcap_pkthdr { struct timeval ts (two 32-bit longs on Windows); bpf_u_int32 caplen; bpf_u_int32 len; }
+        if (_dumper != IntPtr.Zero)
+            pcap_dump(_dumper, header, data);
         length = Math.Min(Marshal.ReadInt32(header, 8), buffer.Length);
         Marshal.Copy(data, buffer, 0, length);
         return CaptureResult.Packet;
@@ -91,6 +104,11 @@ public sealed class PcapCapture : IDisposable
 
     public void Dispose()
     {
+        if (_dumper != IntPtr.Zero)
+        {
+            pcap_dump_close(_dumper);
+            _dumper = IntPtr.Zero;
+        }
         if (_handle == IntPtr.Zero)
             return;
         pcap_close(_handle);
@@ -175,4 +193,13 @@ public sealed class PcapCapture : IDisposable
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern void pcap_close(IntPtr p);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private static extern IntPtr pcap_dump_open(IntPtr p, string path);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void pcap_dump(IntPtr dumper, IntPtr header, IntPtr data);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void pcap_dump_close(IntPtr dumper);
 }

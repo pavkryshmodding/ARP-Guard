@@ -47,6 +47,10 @@ It asks for administrator rights on start, because pinning changes the system AR
   - **Npcap capture test** uses Npcap, the same way watching does.
   - **pktmon capture test** uses Windows' built-in `pktmon` instead, so it works without
     Npcap and double-checks it. It won't start if another pktmon capture is already running.
+  - Every run (including failed or cancelled ones) is saved to
+    `%ProgramData%\ArpGuard\tests\` as a `.txt` report with the interfaces, pins, ARP table,
+    results and findings, plus the raw capture (`.pcap`/`.pcapng`, headers only, opens in
+    Wireshark). **Open test results folder** opens it. The newest 50 runs are kept.
 
 ## The command-line tool
 

@@ -1,0 +1,74 @@
+using System.Buffers.Binary;
+
+namespace ArpGuard;
+
+/// <summary>Reads the Ethernet frames out of a pcapng file (the format 'pktmon etl2pcap' writes).</summary>
+public static class PcapNg
+{
+    private const uint SectionHeader = 0x0A0D0D0A;
+    private const uint InterfaceDescription = 1;
+    private const uint SimplePacket = 3;
+    private const uint EnhancedPacket = 6;
+    private const uint ByteOrderMagic = 0x1A2B3C4D;
+    private const ushort LinkTypeEthernet = 1;
+
+    /// <returns>The Ethernet frames, plus how many packets were skipped for being another link type.</returns>
+    public static (List<byte[]> Frames, int Skipped) ReadEthernetFrames(string path)
+    {
+        byte[] file = File.ReadAllBytes(path);
+        var frames = new List<byte[]>();
+        var linkTypes = new List<ushort>();
+        int skipped = 0;
+
+        int pos = 0;
+        while (pos + 12 <= file.Length)
+        {
+            uint type = U32(file, pos);
+            int length = (int)U32(file, pos + 4);
+            if (length < 12 || length % 4 != 0 || pos + length > file.Length)
+                throw new ArpGuardException($"{Path.GetFileName(path)} is damaged (bad block at byte {pos}).");
+            int body = pos + 8;
+            int bodyEnd = pos + length - 4;
+
+            switch (type)
+            {
+                case SectionHeader:
+                    if (U32(file, body) != ByteOrderMagic)
+                        throw new ArpGuardException($"{Path.GetFileName(path)} isn't a little-endian pcapng file.");
+                    linkTypes.Clear(); // interface IDs restart in each section
+                    break;
+
+                case InterfaceDescription:
+                    linkTypes.Add(BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(body)));
+                    break;
+
+                case EnhancedPacket:
+                {
+                    int iface = (int)U32(file, body);
+                    int captured = (int)U32(file, body + 12);
+                    int data = body + 20;
+                    if (iface < linkTypes.Count && linkTypes[iface] == LinkTypeEthernet && data + captured <= bodyEnd)
+                        frames.Add(file.AsSpan(data, captured).ToArray());
+                    else
+                        skipped++;
+                    break;
+                }
+
+                case SimplePacket:
+                {
+                    int data = body + 4;
+                    int captured = Math.Min((int)U32(file, body), bodyEnd - data);
+                    if (linkTypes.Count > 0 && linkTypes[0] == LinkTypeEthernet && captured > 0)
+                        frames.Add(file.AsSpan(data, captured).ToArray());
+                    else
+                        skipped++;
+                    break;
+                }
+            }
+            pos += length;
+        }
+        return (frames, skipped);
+    }
+
+    private static uint U32(byte[] b, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(offset));
+}

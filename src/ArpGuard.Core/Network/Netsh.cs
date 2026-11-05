@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 
 namespace ArpGuard;
@@ -28,19 +27,5 @@ public static class Netsh
             throw new ArpGuardException($"netsh couldn't remove the entry (exit code {code}): {output.Trim()}");
     }
 
-    private static (int ExitCode, string Output) Run(string arguments)
-    {
-        var psi = new ProcessStartInfo("netsh", arguments)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        using var process = Process.Start(psi) ?? throw new ArpGuardException("Couldn't start netsh.");
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        return (process.ExitCode, stdout.Result + stderr.Result);
-    }
+    private static (int ExitCode, string Output) Run(string arguments) => ProcessRunner.Run("netsh", arguments);
 }

@@ -4,8 +4,10 @@ using System.Net.Sockets;
 
 namespace ArpGuard;
 
+/// <param name="Id">The adapter's GUID; Npcap names its capture device after it.</param>
+/// <param name="Mac">This computer's MAC on the adapter ("" if it has none).</param>
 public sealed record NetInterface(
-    int Index, string Name, IPAddress? Address, IPAddress? Mask, IReadOnlyList<IPAddress> Gateways)
+    int Index, string Id, string Name, string Mac, IPAddress? Address, IPAddress? Mask, IReadOnlyList<IPAddress> Gateways)
 {
     public bool Contains(IPAddress ip) =>
         Address is not null && Mask is not null && IpUtil.SameSubnet(Address, ip, Mask);
@@ -89,7 +91,9 @@ public sealed class Snapshot
                 .Where(a => a.AddressFamily == AddressFamily.InterNetwork && !a.Equals(IPAddress.Any))
                 .ToList();
 
-            result.Add(new NetInterface(v4.Index, ni.Name, unicast?.Address, unicast?.IPv4Mask, gateways));
+            result.Add(new NetInterface(
+                v4.Index, ni.Id, ni.Name, MacUtil.Format(ni.GetPhysicalAddress().GetAddressBytes()),
+                unicast?.Address, unicast?.IPv4Mask, gateways));
         }
         return result;
     }

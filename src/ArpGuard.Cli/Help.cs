@@ -16,6 +16,8 @@ internal static class Help
               check                Look for signs of ARP spoofing
                 --online           Also look up the gateway's MAC vendor (sends only the first
                                    3 bytes of the MAC to api.macvendors.com)
+                --listen <sec>     Also inspect network traffic for this long (needs Npcap).
+                                   Catches spoofing the ARP table can't show
 
               pin                  Add a static (permanent) ARP entry - defaults to your gateway  [admin]
                 --ip <addr>        IP to pin instead of the gateway
@@ -34,6 +36,7 @@ internal static class Help
                 --interval <sec>   Seconds between checks (default 2)
                 --log <file>       Also append alerts to a file
                 --no-beep          Don't beep on critical alerts
+                --no-capture       Only read the ARP table; don't inspect packets with Npcap
 
             Exit codes: 0 = ok, 1 = error/cancelled, 2 = 'check' found signs of spoofing
             """);

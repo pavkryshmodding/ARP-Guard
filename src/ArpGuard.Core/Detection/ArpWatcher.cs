@@ -6,7 +6,11 @@ namespace ArpGuard;
 /// Remembers each IP's MAC and reports changes. Call <see cref="Start"/> once, then
 /// <see cref="Tick"/> on a timer. Not thread-safe: don't overlap calls.
 /// </summary>
-public sealed class ArpWatcher(PinStore pins)
+/// <param name="capturePackets">
+/// Also inspect packets with Npcap (if installed). The ARP table alone can't show spoofing aimed at
+/// the router, or any spoofing once the gateway is pinned.
+/// </param>
+public sealed class ArpWatcher(PinStore pins, bool capturePackets = true) : IDisposable
 {
     // Pinging the gateway now and then keeps its entry fresh, so a forged reply shows up quickly.
     private static readonly TimeSpan GatewayProbeInterval = TimeSpan.FromSeconds(10);
@@ -14,6 +18,7 @@ public sealed class ArpWatcher(PinStore pins)
     private readonly Dictionary<(int Interface, IPAddress Ip), string> _lastKnownMac = new();
     private readonly HashSet<string> _reportedDuplicates = new();
     private DateTime _lastProbe;
+    private WireMonitor? _monitor;
 
     public int DeviceCount => _lastKnownMac.Count;
 
@@ -32,7 +37,19 @@ public sealed class ArpWatcher(PinStore pins)
         foreach (var g in SpoofDetector.FindDuplicates(s))
             _reportedDuplicates.Add(g.Key);
 
-        return SpoofDetector.Analyze(s, pins);
+        var findings = SpoofDetector.Analyze(s, pins);
+        if (capturePackets)
+            _monitor = WireMonitor.Start(s, pins, findings);
+        return findings;
+    }
+
+    /// <summary>True if packets are being inspected as well as the ARP table.</summary>
+    public bool CapturingPackets => _monitor is not null;
+
+    public void Dispose()
+    {
+        _monitor?.Dispose();
+        _monitor = null;
     }
 
     /// <summary>Takes a new snapshot and returns only what changed since the last one.</summary>
@@ -73,6 +90,9 @@ public sealed class ArpWatcher(PinStore pins)
             if (_reportedDuplicates.Add(g.Key))
                 findings.Add(SpoofDetector.Describe(g, s));
         }
+
+        if (_monitor is not null)
+            findings.AddRange(_monitor.Drain());
         return findings;
     }
 }

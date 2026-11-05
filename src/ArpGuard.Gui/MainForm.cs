@@ -15,12 +15,18 @@ internal sealed class MainForm : Form
     private readonly SplitContainer _split = new();
     private readonly System.Windows.Forms.Timer _timer = new();
     private readonly NotifyIcon _tray = new();
+    private readonly MenuStrip _menu = new();
+    private readonly ToolStripMenuItem _testNpcap = new("&Npcap capture test");
+    private readonly ToolStripMenuItem _testPktmon = new("&pktmon capture test");
     private readonly Font _bold;
 
     private ArpWatcher? _watcher;
     private bool _ticking;
     private bool _gatewayPinned;
     private bool _alarm; // a danger alert seen while watching; cleared by "Check now"
+    private int _testSeconds = 30;
+    private CancellationTokenSource? _testCts; // set while a capture test runs
+    private bool _closeAfterTest;
 
     public MainForm()
     {
@@ -81,9 +87,13 @@ internal sealed class MainForm : Form
         _split.Panel1.Controls.Add(_table);
         _split.Panel2.Controls.Add(_log);
 
+        BuildTestMenu();
+
         Controls.Add(_split);
         Controls.Add(buttons);
         Controls.Add(_status);
+        Controls.Add(_menu);
+        MainMenuStrip = _menu;
 
         _timer.Interval = WatchIntervalMs;
         _timer.Tick += async (_, _) => await WatchTickAsync();
@@ -98,9 +108,20 @@ internal sealed class MainForm : Form
             FitLastColumn();
             await RunBusyAsync(() => RefreshAsync(writeFindings: true));
         };
+        FormClosing += (_, e) =>
+        {
+            if (_testCts is null)
+                return;
+            // Let the test clean up first: an abandoned pktmon capture would keep running.
+            e.Cancel = true;
+            _closeAfterTest = true;
+            _testCts.Cancel();
+            Write("Stopping the test before closing...");
+        };
         FormClosed += (_, _) =>
         {
             _timer.Stop();
+            _watcher?.Dispose();
             _tray.Visible = false;
             _tray.Dispose();
         };
@@ -233,6 +254,7 @@ internal sealed class MainForm : Form
         if (_watcher is not null)
         {
             _timer.Stop();
+            _watcher.Dispose();
             _watcher = null;
             _tray.Visible = false;
             _watch.Text = "Start watching";
@@ -245,11 +267,21 @@ internal sealed class MainForm : Form
         {
             var watcher = new ArpWatcher(LoadPins());
             _tray.Visible = true; // needed for balloon notifications
-            var findings = await Task.Run(watcher.Start);
+            List<Finding> findings;
+            try
+            {
+                findings = await Task.Run(watcher.Start);
+            }
+            catch
+            {
+                watcher.Dispose();
+                throw;
+            }
             _watcher = watcher;
             findings.ForEach(Report);
             ShowSnapshot(watcher.Latest!, findings.Any(f => f.Severity == Severity.Danger));
-            Write($"{DateTime.Now:HH:mm:ss} Watching {watcher.DeviceCount} devices every {WatchIntervalMs / 1000}s. " +
+            Write($"{DateTime.Now:HH:mm:ss} Watching {watcher.DeviceCount} devices every {WatchIntervalMs / 1000}s" +
+                  (watcher.CapturingPackets ? " and inspecting packets as they arrive. " : ". ") +
                   "You can minimize this window; you'll get a notification if something looks wrong.");
             _watch.Text = "Stop watching";
             _timer.Start();
@@ -298,6 +330,98 @@ internal sealed class MainForm : Form
         _alarm = true;
         SystemSounds.Exclamation.Play();
         _tray.ShowBalloonTip(10_000, "ArpGuard: possible ARP spoofing", f.Message, ToolTipIcon.Warning);
+    }
+
+    // ---- tests -------------------------------------------------------------
+
+    private void BuildTestMenu()
+    {
+        _testNpcap.ToolTipText =
+            "Capture with Npcap (what watching uses) and show who claims to be your router and this computer.";
+        _testNpcap.Click += async (_, _) => await RunTestAsync("Npcap", CaptureTest.RunNpcap);
+        _testPktmon.ToolTipText =
+            "Capture with Windows' built-in pktmon instead. No Npcap needed, so it double-checks the Npcap test.";
+        _testPktmon.Click += async (_, _) => await RunTestAsync("pktmon", CaptureTest.RunPktmon);
+
+        var length = new ToolStripMenuItem("Test &length");
+        foreach (int seconds in new[] { 15, 30, 60, 120 })
+        {
+            var item = new ToolStripMenuItem($"{seconds} seconds") { Checked = seconds == _testSeconds };
+            item.Click += (_, _) =>
+            {
+                _testSeconds = seconds;
+                foreach (ToolStripMenuItem other in length.DropDownItems)
+                    other.Checked = other == item;
+            };
+            length.DropDownItems.Add(item);
+        }
+
+        var test = new ToolStripMenuItem("&Test") { ShowShortcutKeys = false };
+        test.DropDownItems.AddRange([_testNpcap, _testPktmon, new ToolStripSeparator(), length]);
+        _menu.ShowItemToolTips = true;
+        _menu.Items.Add(test);
+    }
+
+    private async Task RunTestAsync(
+        string name, Func<Snapshot, PinStore, TimeSpan, CancellationToken, CaptureTestResult> test)
+    {
+        if (_testCts is not null)
+            return;
+        using var cts = new CancellationTokenSource();
+        _testCts = cts;
+        _testNpcap.Enabled = _testPktmon.Enabled = false;
+        var (oldText, oldColor) = (_status.Text, _status.BackColor);
+        int seconds = _testSeconds;
+        SetStatus($"{name} test running ({seconds} s)...", Color.SteelBlue);
+        Write($"{DateTime.Now:HH:mm:ss} {name} test: capturing for {seconds} s while pinging 1.1.1.1 once a second...");
+
+        try
+        {
+            var store = LoadPins();
+            var result = await Task.Run(() =>
+                test(Snapshot.Take(probeGateways: true), store, TimeSpan.FromSeconds(seconds), cts.Token));
+
+            foreach (string line in result.Report)
+                Write("  " + line);
+            foreach (var f in result.Findings)
+                Write(Format(f));
+            if (result.Danger)
+            {
+                Write("=> The captured traffic shows signs of ARP spoofing. See above.");
+                _alarm = true;
+                SetStatus("Possible ARP spoofing detected!", Color.Firebrick);
+            }
+            else
+            {
+                Write("=> No signs of ARP spoofing in the captured traffic.");
+                SetStatus(oldText, oldColor);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Write("Test cancelled.");
+            SetStatus(oldText, oldColor);
+        }
+        catch (ArpGuardException ex)
+        {
+            Write("ERROR  " + ex.Message);
+            SetStatus(oldText, oldColor);
+            if (!_closeAfterTest)
+                MessageBox.Show(this, ex.Message, $"{name} test", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        catch (Exception ex)
+        {
+            Write("ERROR  " + ex);
+            SetStatus(oldText, oldColor);
+        }
+        finally
+        {
+            Write("");
+            _testCts = null;
+            _testNpcap.Enabled = _testPktmon.Enabled = true;
+            if (_closeAfterTest)
+                Close();
+        }
     }
 
     // ---- display -----------------------------------------------------------

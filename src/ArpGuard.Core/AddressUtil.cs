@@ -22,6 +22,22 @@ public static class MacUtil
     /// </summary>
     public static bool IsLocallyAdministered(string mac) => (FirstByte(mac) & 0x02) != 0;
 
+    /// <summary>
+    /// True for two MACs that are almost certainly one device's different interfaces. A router owns a
+    /// block of consecutive MACs (LAN, WAN, each Wi-Fi radio) and may send traffic from any of them;
+    /// guest/mesh networks often reuse the MAC with the locally administered bit set.
+    /// An attacker could forge a MAC like this, but tools like parental-control boxes use their own.
+    /// </summary>
+    public static bool IsSibling(string a, string b)
+    {
+        if (a == b || a.Length != 17 || b.Length != 17)
+            return a == b;
+        bool sameMiddle = a[2..14] == b[2..14];
+        bool firstMatches = (FirstByte(a) | 0x02) == (FirstByte(b) | 0x02);
+        int lastDiff = Math.Abs(Convert.ToByte(a[15..], 16) - Convert.ToByte(b[15..], 16));
+        return sameMiddle && firstMatches && lastDiff <= 15;
+    }
+
     /// <summary>Accepts aa:bb:cc:dd:ee:ff, aa-bb-cc-dd-ee-ff, aabb.ccdd.eeff or aabbccddeeff.</summary>
     public static bool TryNormalize(string input, out string mac)
     {

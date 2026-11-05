@@ -4,16 +4,19 @@ internal static class CheckCommand
 {
     public static async Task<int> RunAsync(CliArgs cli)
     {
-        cli.Allow("online");
+        cli.Allow("online", "listen");
         bool online = cli.Flag("online");
+        int listen = cli.GetInt("listen", 0, 1, 3600);
 
         var s = Snapshot.Take(probeGateways: true);
         if (!s.Interfaces.Any(i => i.Gateways.Count > 0))
             Ui.Warn("No active interface has a default gateway. Are you connected to a network?");
 
-        var findings = SpoofDetector.Analyze(s, PinStore.Load(Ui.Warn))
-            .OrderBy(f => f.Severity)
-            .ToList();
+        var pins = PinStore.Load(Ui.Warn);
+        var findings = SpoofDetector.Analyze(s, pins);
+        if (listen > 0)
+            findings.AddRange(Listen(s, pins, listen));
+        findings = findings.OrderBy(f => f.Severity).ToList();
         foreach (var finding in findings)
             Ui.Show(finding);
 
@@ -31,6 +34,20 @@ internal static class CheckCommand
         else
             Ui.Ok("No signs of ARP spoofing.");
         return 0;
+    }
+
+    /// <summary>Inspects packets for a while, catching spoofing the ARP table can't show.</summary>
+    private static List<Finding> Listen(Snapshot s, PinStore pins, int seconds)
+    {
+        var findings = new List<Finding>();
+        using var monitor = WireMonitor.Start(s, pins, findings);
+        if (monitor is null)
+            return findings;
+
+        Console.WriteLine($"Listening to network traffic for {seconds}s...");
+        Thread.Sleep(TimeSpan.FromSeconds(seconds));
+        findings.AddRange(monitor.Drain());
+        return findings;
     }
 
     private static async Task ShowGatewayVendorsAsync(Snapshot s)

@@ -11,14 +11,32 @@ public static class PcapNg
     private const uint EnhancedPacket = 6;
     private const uint ByteOrderMagic = 0x1A2B3C4D;
     private const ushort LinkTypeEthernet = 1;
+    private const ushort LinkTypeIeee80211 = 105;
 
-    /// <returns>The Ethernet frames, plus how many packets were skipped for being another link type.</returns>
-    public static (List<byte[]> Frames, int Skipped) ReadEthernetFrames(string path)
+    /// <returns>
+    /// The Ethernet frames; how many packets were skipped (not Ethernet or Wi-Fi data); and how many
+    /// were Wi-Fi frames converted to Ethernet.
+    /// </returns>
+    public static (List<byte[]> Frames, int Skipped, int FromWifi) ReadEthernetFrames(string path)
     {
         byte[] file = File.ReadAllBytes(path);
         var frames = new List<byte[]>();
         var linkTypes = new List<ushort>();
-        int skipped = 0;
+        int skipped = 0, fromWifi = 0;
+
+        void Add(ushort linkType, ReadOnlySpan<byte> data)
+        {
+            // pktmon labels raw Wi-Fi frames as Ethernet, so check every frame for an 802.11 data header.
+            if (linkType is LinkTypeEthernet or LinkTypeIeee80211 && Ieee80211.TryToEthernet(data) is { } converted)
+            {
+                frames.Add(converted);
+                fromWifi++;
+            }
+            else if (linkType == LinkTypeEthernet)
+                frames.Add(data.ToArray());
+            else
+                skipped++;
+        }
 
         int pos = 0;
         while (pos + 12 <= file.Length)
@@ -47,8 +65,8 @@ public static class PcapNg
                     int iface = (int)U32(file, body);
                     int captured = (int)U32(file, body + 12);
                     int data = body + 20;
-                    if (iface < linkTypes.Count && linkTypes[iface] == LinkTypeEthernet && data + captured <= bodyEnd)
-                        frames.Add(file.AsSpan(data, captured).ToArray());
+                    if (iface < linkTypes.Count && data + captured <= bodyEnd)
+                        Add(linkTypes[iface], file.AsSpan(data, captured));
                     else
                         skipped++;
                     break;
@@ -58,8 +76,8 @@ public static class PcapNg
                 {
                     int data = body + 4;
                     int captured = Math.Min((int)U32(file, body), bodyEnd - data);
-                    if (linkTypes.Count > 0 && linkTypes[0] == LinkTypeEthernet && captured > 0)
-                        frames.Add(file.AsSpan(data, captured).ToArray());
+                    if (linkTypes.Count > 0 && captured > 0)
+                        Add(linkTypes[0], file.AsSpan(data, captured));
                     else
                         skipped++;
                     break;
@@ -67,7 +85,7 @@ public static class PcapNg
             }
             pos += length;
         }
-        return (frames, skipped);
+        return (frames, skipped, fromWifi);
     }
 
     private static uint U32(byte[] b, int offset) => BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(offset));

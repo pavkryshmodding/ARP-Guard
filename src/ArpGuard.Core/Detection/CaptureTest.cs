@@ -131,12 +131,13 @@ public static class CaptureTest
             if (code != 0 || !File.Exists(pcap))
                 throw new ArpGuardException($"pktmon couldn't convert its capture (exit code {code}): {output.Trim()}");
 
-            var (frames, skipped) = PcapNg.ReadEthernetFrames(pcap);
+            var (frames, skipped, fromWifi) = PcapNg.ReadEthernetFrames(pcap);
             var report = new List<string>
             {
                 $"pktmon recorded {frames.Count + skipped} packets on all network adapters" +
-                (skipped > 0 ? $" ({skipped} weren't Ethernet and were skipped)." : ".") +
-                " It can log a packet more than once, so counts may be inflated.",
+                (fromWifi > 0 ? $"; {fromWifi} were Wi-Fi frames, converted to Ethernet" : "") +
+                (skipped > 0 ? $"; {skipped} weren't Ethernet or Wi-Fi data and were skipped" : "") +
+                ". It can log a packet more than once, so counts may be inflated.",
             };
             var findings = new List<Finding>();
             foreach (var iface in interfaces)
